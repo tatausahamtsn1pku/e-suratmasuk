@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "nodemon src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "start": "node src/app.js",
+  "postinstall": "prisma generate",
+  "migrate": "prisma migrate deploy",
+  "seed": "prisma db seed"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
