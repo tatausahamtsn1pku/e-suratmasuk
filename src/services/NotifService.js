@@ -32,7 +32,7 @@ class NotifService {
     }
 
     /**
-     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDF
+     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDFF
      */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         const mailOptions = {
