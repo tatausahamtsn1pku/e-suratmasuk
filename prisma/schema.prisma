@@ -1,0 +1,74 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  VALIDATOR
+  PENULIS
+  APPROVER
+  STAFF
+}
+
+model User {
+  id             String   @id @default(uuid())
+  username       String   @unique
+  password       String
+  role           Role
+  jabatan        String?
+  waNumber       String?
+  
+  // Relasi: Satu User (sebagai Staff/Penerus) bisa menangani banyak Surat
+  surats         Surat[]  @relation("handler")
+  
+  // Relasi: Satu User (sebagai Approver) bisa menyetujui banyak Surat (Opsi B)
+  approvedSurats Surat[]  @relation("approver")
+}
+
+model Surat {
+  id              String   @id @default(uuid())
+  trackingId      String   @unique
+  namaPengirim    String
+  emailPengirim   String
+  waPengirim      String
+  instansi        String
+  fileUrl         String
+  nomorSurat      String?
+  tglSurat        String?
+  isiDisposisi    String?
+  status          String   @default("PENDING_VALIDATION") 
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt 
+  officialEntry   DateTime 
+
+  // --- BAGIAN RELASI ---
+  
+  // Foreign Key untuk Staff (Penerus)
+  penerusId       String?
+  handler         User?    @relation("handler", fields: [penerusId], references: [id])
+  
+  // Foreign Key untuk Approver (Opsi B)
+  approverId      String?
+  approver        User?    @relation("approver", fields: [approverId], references: [id])
+  
+  jabatanPenerus  String?
+
+  // --- BAGIAN REVIEW & APPROVAL ---
+
+  catatanStaff    String?
+  ttdStaff        String?
+  catatanApprover String?
+  ttdApprover     String?
+
+  // --- BAGIAN SURAT BALASAN (FINAL REPLY) ---
+
+  fileReplyUrl    String?
+  fileReplyName   String?
+}
