@@ -6,7 +6,7 @@ const NotifService = require('../services/NotifService');
 const crypto = require('crypto');
 
 class SuratController {
-  // --- FUNGSI HELPER (DIPERTAHANKAN PENUH) ---
+  // --- FUNGSI HELPER (UTUH) ---
   generateTrackingId() { return crypto.randomBytes(5).toString('hex').toUpperCase(); }
   cleanQuotes(val) { return val ? val.toString().replace(/['"]+/g, '').trim() : ""; }
   getPublicId(url) {
@@ -19,7 +19,7 @@ class SuratController {
     } catch (e) { return null; }
   }
 
-  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY TETAP ADA) ---
+  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY) ---
   async submit(req, res) {
     try {
       if (!req.file) return res.status(400).json({ error: "File PDF wajib ada!" });
@@ -57,14 +57,27 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: "Gagal: " + e.message }); }
   }
 
-  // --- 2. ALUR INTERNAL (VALIDATOR -> KATU -> KAMAD) ---
+  // --- 2. ALUR BIROKRASI (DENGAN UPDATE DATA) ---
+  
+  // Endpoint ini sekarang bisa menerima Body JSON untuk update data
   async forwardToKATU(req, res) {
     try {
+      const { id } = req.params;
+      const { nomorSurat, namaPengirim, instansi, emailPengirim, waPengirim } = req.body;
+
       await prisma.surat.update({
-        where: { id: req.params.id },
-        data: { status: 'AWAITING_KATU_REVIEW' }
+        where: { id },
+        data: { 
+          status: 'AWAITING_KATU_REVIEW',
+          // Jika data ada di body, maka diupdate. Jika tidak, tetap pakai data lama.
+          nomorSurat: nomorSurat ? this.cleanQuotes(nomorSurat) : undefined,
+          namaPengirim: namaPengirim ? this.cleanQuotes(namaPengirim) : undefined,
+          instansi: instansi ? this.cleanQuotes(instansi) : undefined,
+          emailPengirim: emailPengirim ? this.cleanQuotes(emailPengirim) : undefined,
+          waPengirim: waPengirim ? this.cleanQuotes(waPengirim) : undefined
+        }
       });
-      res.json({ success: true, message: "Diteruskan ke KATU" });
+      res.json({ success: true, message: "Surat diperbarui dan diteruskan ke KATU" });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
@@ -75,15 +88,19 @@ class SuratController {
       if (!req.file) return res.status(400).json({ error: "KATU wajib mengunggah TTD!" });
 
       const upload = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_katu', resource_type: 'raw' }, (err, res) => (err ? reject(err) : resolve(res)));
+        const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_katu', resource_type: 'raw' }, (err, result) => (err ? reject(err) : resolve(result)));
         stream.end(req.file.buffer);
       });
 
       await prisma.surat.update({
         where: { id },
-        data: { status: 'AWAITING_KAMAD_APPROVAL', catatanKATU, ttdKATU: upload.secure_url }
+        data: { 
+          status: 'AWAITING_KAMAD_APPROVAL', 
+          catatanKATU, 
+          ttdKATU: upload.secure_url 
+        }
       });
-      res.json({ success: true, message: "Review KATU selesai, lanjut ke Kamad" });
+      res.json({ success: true, message: "Diteruskan ke Kamad" });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
@@ -103,11 +120,11 @@ class SuratController {
           approverId: req.user.id
         }
       });
-      res.json({ success: true, message: "Disposisi Kamad Berhasil" });
+      res.json({ success: true, message: "Disposisi Berhasil" });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 3. REVIEW STAFF & BALASAN FINAL ---
+  // --- 3. STAFF & BALASAN ---
   async staffReview(req, res) {
     try {
       const { id } = req.params;
@@ -123,7 +140,7 @@ class SuratController {
         where: { id },
         data: { catatanStaff: req.body.catatanStaff, ttdStaff: ttdUrl, status: 'AWAITING_REPLY_UMUM' }
       });
-      res.json({ success: true, message: "Review Staff Terkirim ke Validator Umum" });
+      res.json({ success: true, message: "Review Staff Berhasil" });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
@@ -134,10 +151,8 @@ class SuratController {
       const surat = await prisma.surat.findUnique({ where: { id } });
 
       if (!surat.isNeedReplyFile) {
-        // Balasan Notifikasi Teks Saja
         await NotifService.sendInternalNotif(surat.emailPengirim, "Tanggapan Surat", pesan);
       } else {
-        // Balasan PDF Resmi (Upload Cloudinary)
         if (!req.file) return res.status(400).json({ error: "Wajib upload PDF balasan!" });
         const upload = await new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/balasan', resource_type: 'raw' }, (err, res) => (err ? reject(err) : resolve(res)));
@@ -148,11 +163,11 @@ class SuratController {
       }
 
       await prisma.surat.update({ where: { id }, data: { status: 'COMPLETED' } });
-      res.json({ success: true, message: "Balasan berhasil dikirim!" });
+      res.json({ success: true, message: "Balasan Terkirim!" });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 4. OPERASIONAL (TRACK, HISTORY, DELETE TETAP UTUH) ---
+  // --- 4. OPERASIONAL (TRACK, HISTORY, DELETE) ---
   async track(req, res) {
     const data = await prisma.surat.findUnique({ where: { trackingId: req.params.id }, select: { trackingId: true, status: true, nomorSurat: true, instansi: true, updatedAt: true } });
     if (!data) return res.status(404).json({ error: "Antrean tidak ditemukan" });
