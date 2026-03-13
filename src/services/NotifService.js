@@ -1,41 +1,20 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
-
-// Memaksa sistem Node.js untuk selalu memprioritaskan resolusi DNS ke IPv4
-dns.setDefaultResultOrder('ipv4first');
+const axios = require('axios');
 
 class NotifService {
     constructor() {
-        this.transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587, // Menggunakan port 587 (STARTTLS)
-            secure: false, // WAJIB false untuk port 587
-            requireTLS: true, // Memaksa agar koneksi di-upgrade ke enkripsi TLS
-            auth: { 
-                user: process.env.EMAIL_USER, 
-                pass: process.env.EMAIL_PASS 
-            },
-            // 🔥 KUNCI PAMUNGKAS: Memaksa socket lokal murni menggunakan IPv4 (Mengatasi Local :::0)
-            localAddress: '0.0.0.0', 
-            family: 4, // Mengabaikan IPv6 sepenuhnya
-            connectionTimeout: 20000,
-            greetingTimeout: 20000,
-            tls: {
-                servername: 'smtp.gmail.com',
-                rejectUnauthorized: false
-            }
-        });
+        this.apiKey = process.env.BREVO_API_KEY;
+        this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
     }
 
     /**
-     * Mengirim notifikasi email internal untuk alur sistem disposisi
+     * Mengirim notifikasi email internal menggunakan Brevo API
      */
     async sendInternalNotif(to, subject, message) {
-        const mailOptions = {
-            from: `"Sistem Disposisi MTsN 1" <${process.env.EMAIL_USER}>`,
-            to: to,
+        const payload = {
+            sender: { name: "Sistem Disposisi MTsN 1", email: process.env.EMAIL_USER },
+            to: [{ email: to }],
             subject: subject,
-            html: `
+            htmlContent: `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
                 <h3 style="color: #004d40;">Notifikasi Sistem Disposisi</h3>
                 <p style="color: #333; line-height: 1.5;">${message}</p>
@@ -44,23 +23,31 @@ class NotifService {
             </div>
             `
         };
+
         try {
-            return await this.transporter.sendMail(mailOptions);
+            const response = await axios.post(this.apiUrl, payload, {
+                headers: {
+                    'accept': 'application/json',
+                    'api-key': this.apiKey,
+                    'content-type': 'application/json'
+                }
+            });
+            return response.data;
         } catch (error) {
-            console.error("❌ Gagal kirim email internal:", error.message);
+            console.error("❌ Gagal kirim email internal:", error.response?.data || error.message);
             throw error;
         }
     }
 
     /**
-     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDF
+     * Mengirim balasan resmi dengan desain profesional dan lampiran menggunakan Brevo API
      */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
-        const mailOptions = {
-            from: `"Tata Usaha MTsN 1 Pekanbaru" <${process.env.EMAIL_USER}>`,
-            to: to,
+        const payload = {
+            sender: { name: "Tata Usaha MTsN 1 Pekanbaru", email: process.env.EMAIL_USER },
+            to: [{ email: to, name: nama }],
             subject: `Tanggapan Resmi Surat - ${nomor}`,
-            html: `
+            htmlContent: `
             <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
                 <div style="background-color: #004d40; color: white; padding: 30px; text-align: center;">
                     <h1 style="margin: 0; font-size: 22px; letter-spacing: 1px;">MTsN 1 KOTA PEKANBARU</h1>
@@ -90,18 +77,26 @@ class NotifService {
                     Ini adalah email otomatis. Mohon tidak membalas langsung ke alamat email ini.
                 </div>
             </div>
-            `,
-            attachments: [
-                {
-                    filename: fileName,
-                    path: fileUrl 
-                }
-            ]
+            `
         };
+
+        // Brevo sangat canggih, kita cukup mengirimkan URL file Cloudinary, 
+        // Brevo yang akan otomatis mendownload dan menjadikannya lampiran di email tujuan!
+        if (fileUrl && fileName) {
+            payload.attachment = [{ url: fileUrl, name: fileName }];
+        }
+
         try {
-            return await this.transporter.sendMail(mailOptions);
+            const response = await axios.post(this.apiUrl, payload, {
+                headers: {
+                    'accept': 'application/json',
+                    'api-key': this.apiKey,
+                    'content-type': 'application/json'
+                }
+            });
+            return response.data;
         } catch (error) {
-            console.error("❌ Gagal kirim email balasan resmi:", error.message);
+            console.error("❌ Gagal kirim email balasan resmi:", error.response?.data || error.message);
             throw error;
         }
     }
