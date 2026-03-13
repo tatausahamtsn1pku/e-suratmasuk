@@ -6,11 +6,17 @@ class NotifService {
         this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
     }
 
+    /**
+     * Mengirim notifikasi email internal menggunakan Brevo API
+     */
     async sendInternalNotif(to, subject, message) {
+        // Cek jika email kosong
+        if (!to) throw new Error("Email tujuan tidak boleh kosong!");
+
         const payload = {
             sender: { name: "Sistem Disposisi MTsN 1", email: process.env.EMAIL_USER },
             to: [{ email: to }],
-            subject: subject,
+            subject: subject || "Notifikasi Sistem",
             htmlContent: `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
                 <h3 style="color: #004d40;">Notifikasi Sistem Disposisi</h3>
@@ -31,16 +37,26 @@ class NotifService {
             });
             return response.data;
         } catch (error) {
-            console.error("❌ Gagal kirim email internal:", error.response?.data || error.message);
-            throw error;
+            // Mengambil pesan error ASLI dari Brevo
+            const detailError = error.response?.data?.message || error.message;
+            console.error("❌ Gagal kirim email internal:", detailError);
+            throw new Error(`Brevo Error: ${detailError}`);
         }
     }
 
+    /**
+     * Mengirim balasan resmi dengan desain profesional dan lampiran menggunakan Brevo API
+     */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
+        // Validasi ketat sebelum dikirim ke Brevo
+        if (!to) throw new Error("Email tujuan pengirim surat tidak ditemukan di database!");
+        if (!process.env.EMAIL_USER) throw new Error("EMAIL_USER di file .env belum diisi!");
+
         const payload = {
             sender: { name: "Tata Usaha MTsN 1 Pekanbaru", email: process.env.EMAIL_USER },
-            to: [{ email: to, name: nama }],
-            subject: `Tanggapan Resmi Surat - ${nomor}`,
+            // Memberikan default string jika nama kosong agar Brevo tidak marah (error 400)
+            to: [{ email: to, name: nama || "Pengirim Surat" }],
+            subject: `Tanggapan Resmi Surat - ${nomor || 'Tanpa Nomor'}`,
             htmlContent: `
             <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
                 <div style="background-color: #004d40; color: white; padding: 30px; text-align: center;">
@@ -48,8 +64,8 @@ class NotifService {
                     <p style="margin: 5px 0 0; opacity: 0.8; font-size: 14px;">Sistem Informasi Disposisi E-Surat</p>
                 </div>
                 <div style="padding: 30px; line-height: 1.6; color: #333; background-color: #ffffff;">
-                    <p>Yth. <strong>${nama}</strong>,</p>
-                    <p>Terima kasih telah mengajukan permohonan/surat kepada kami. Berdasarkan verifikasi terhadap surat Anda dengan nomor: <strong>${nomor}</strong>, berikut adalah tanggapan resmi dari kami:</p>
+                    <p>Yth. <strong>${nama || "Pengirim"}</strong>,</p>
+                    <p>Terima kasih telah mengajukan permohonan/surat kepada kami. Berdasarkan verifikasi terhadap surat Anda dengan nomor: <strong>${nomor || '-'}</strong>, berikut adalah tanggapan resmi dari kami:</p>
                     
                     <div style="background: #f1f8f7; padding: 20px; border-left: 5px solid #004d40; margin: 25px 0; border-radius: 4px; font-style: italic; color: #004d40;">
                         "${pesan}"
@@ -74,8 +90,9 @@ class NotifService {
             `
         };
 
-        if (fileUrl && fileName) {
-            payload.attachment = [{ url: fileUrl, name: fileName }];
+        // Pastikan url valid (Brevo butuh URL absolut berawalan http/https)
+        if (fileUrl && fileUrl.startsWith('http')) {
+            payload.attachment = [{ url: fileUrl, name: fileName || 'Surat_Balasan.pdf' }];
         }
 
         try {
@@ -88,8 +105,10 @@ class NotifService {
             });
             return response.data;
         } catch (error) {
-            console.error("❌ Gagal kirim email balasan resmi:", error.response?.data || error.message);
-            throw error;
+            // Meneruskan error detail dari Brevo langsung ke Response Postman
+            const detailError = error.response?.data?.message || error.message;
+            console.error("❌ Gagal kirim email balasan:", error.response?.data || detailError);
+            throw new Error(`Brevo Error: ${detailError}`);
         }
     }
 }
