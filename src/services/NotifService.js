@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const dns = require('dns');
 
-// Memaksa sistem Node.js untuk selalu memprioritaskan IPv4
+// Memaksa sistem Node.js untuk selalu memprioritaskan resolusi DNS ke IPv4
 dns.setDefaultResultOrder('ipv4first');
 
 class NotifService {
@@ -15,7 +15,9 @@ class NotifService {
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS 
             },
-            family: 4, // Tetap memaksa penggunaan IPv4
+            // 🔥 KUNCI PAMUNGKAS: Memaksa socket lokal murni menggunakan IPv4 (Mengatasi Local :::0)
+            localAddress: '0.0.0.0', 
+            family: 4, // Mengabaikan IPv6 sepenuhnya
             connectionTimeout: 20000,
             greetingTimeout: 20000,
             tls: {
