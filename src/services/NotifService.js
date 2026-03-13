@@ -3,10 +3,21 @@ const nodemailer = require('nodemailer');
 class NotifService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            service: 'gmail',
+            // Menggunakan host eksplisit smtp.gmail.com lebih stabil daripada service: 'gmail'
+            host: 'smtp.gmail.com',
+            port: 465, // Port SSL/TLS
+            secure: true, 
             auth: { 
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS 
+            },
+            // Menambahkan timeout dan opsi TLS untuk memaksa penggunaan IPv4
+            // guna menghindari error ENETUNREACH di infrastruktur cloud seperti Railway
+            connectionTimeout: 10000, 
+            greetingTimeout: 10000,
+            tls: {
+                rejectUnauthorized: false, // Menghindari masalah sertifikat pada beberapa jaringan
+                servername: 'smtp.gmail.com'
             }
         });
     }
@@ -16,7 +27,7 @@ class NotifService {
      */
     async sendInternalNotif(to, subject, message) {
         const mailOptions = {
-            from: `Sistem Disposisi MTsN 1 <${process.env.EMAIL_USER}>`,
+            from: `"Sistem Disposisi MTsN 1" <${process.env.EMAIL_USER}>`,
             to: to,
             subject: subject,
             html: `
@@ -28,15 +39,20 @@ class NotifService {
             </div>
             `
         };
-        return this.transporter.sendMail(mailOptions);
+        try {
+            return await this.transporter.sendMail(mailOptions);
+        } catch (error) {
+            console.error("Gagal mengirim email internal:", error);
+            throw error;
+        }
     }
 
     /**
-     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDFF
+     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDF
      */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         const mailOptions = {
-            from: `Tata Usaha MTsN 1 Pekanbaru <${process.env.EMAIL_USER}>`,
+            from: `"Tata Usaha MTsN 1 Pekanbaru" <${process.env.EMAIL_USER}>`,
             to: to,
             subject: `Tanggapan Resmi Surat - ${nomor}`,
             html: `
@@ -77,7 +93,12 @@ class NotifService {
                 }
             ]
         };
-        return this.transporter.sendMail(mailOptions);
+        try {
+            return await this.transporter.sendMail(mailOptions);
+        } catch (error) {
+            console.error("Gagal mengirim email balasan resmi:", error);
+            throw error;
+        }
     }
 }
 
