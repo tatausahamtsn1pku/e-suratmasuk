@@ -3,21 +3,21 @@ const nodemailer = require('nodemailer');
 class NotifService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            // Menggunakan host eksplisit smtp.gmail.com lebih stabil daripada service: 'gmail'
+            // Menggunakan host eksplisit smtp.gmail.com untuk kontrol lebih detail
             host: 'smtp.gmail.com',
-            port: 465, // Port SSL/TLS
+            port: 465, // Menggunakan port SSL/TLS
             secure: true, 
             auth: { 
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS 
             },
-            // Menambahkan timeout dan opsi TLS untuk memaksa penggunaan IPv4
-            // guna menghindari error ENETUNREACH di infrastruktur cloud seperti Railway
-            connectionTimeout: 10000, 
+            // Opsi penting untuk mengatasi ENETUNREACH di cloud
+            connectionTimeout: 10000, // Menambah batas waktu koneksi
             greetingTimeout: 10000,
             tls: {
-                rejectUnauthorized: false, // Menghindari masalah sertifikat pada beberapa jaringan
-                servername: 'smtp.gmail.com'
+                // Memaksa penggunaan IPv4 dengan menyediakan servername
+                servername: 'smtp.gmail.com',
+                rejectUnauthorized: false // Menghindari kegagalan jabat tangan SSL pada jaringan tertentu
             }
         });
     }
@@ -42,13 +42,13 @@ class NotifService {
         try {
             return await this.transporter.sendMail(mailOptions);
         } catch (error) {
-            console.error("Gagal mengirim email internal:", error);
+            console.error("Email Error:", error);
             throw error;
         }
     }
 
     /**
-     * Mengirim balasan resmi kepada pengirim surat dengan desain profesional dan lampiran PDF
+     * Mengirim balasan resmi kepada pengirim surat dengan lampiran PDF
      */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         const mailOptions = {
@@ -56,47 +56,30 @@ class NotifService {
             to: to,
             subject: `Tanggapan Resmi Surat - ${nomor}`,
             html: `
-            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;">
                 <div style="background-color: #004d40; color: white; padding: 30px; text-align: center;">
-                    <h1 style="margin: 0; font-size: 22px; letter-spacing: 1px;">MTsN 1 KOTA PEKANBARU</h1>
-                    <p style="margin: 5px 0 0; opacity: 0.8; font-size: 14px;">Sistem Informasi Disposisi E-Surat</p>
+                    <h1 style="margin: 0; font-size: 22px;">MTsN 1 KOTA PEKANBARU</h1>
+                    <p style="margin: 5px 0 0; opacity: 0.8;">Sistem Informasi Disposisi E-Surat</p>
                 </div>
-                <div style="padding: 30px; line-height: 1.6; color: #333; background-color: #ffffff;">
+                <div style="padding: 30px; line-height: 1.6; color: #333;">
                     <p>Yth. <strong>${nama}</strong>,</p>
-                    <p>Terima kasih telah mengajukan permohonan/surat kepada kami. Berdasarkan verifikasi terhadap surat Anda dengan nomor: <strong>${nomor}</strong>, berikut adalah tanggapan resmi dari kami:</p>
-                    
-                    <div style="background: #f1f8f7; padding: 20px; border-left: 5px solid #004d40; margin: 25px 0; border-radius: 4px; font-style: italic; color: #004d40;">
+                    <p>Berikut adalah tanggapan resmi kami terkait surat nomor: <strong>${nomor}</strong>:</p>
+                    <div style="background: #f1f8f7; padding: 20px; border-left: 5px solid #004d40; margin: 25px 0; border-radius: 4px; color: #004d40;">
                         "${pesan}"
                     </div>
-                    
-                    <p>Dokumen balasan resmi dalam format PDF telah kami lampirkan pada email ini. Anda juga dapat mengunduhnya secara langsung melalui tautan di bawah ini:</p>
-                    
+                    <p>Dokumen balasan telah kami lampirkan. Anda juga dapat mengunduhnya melalui tombol di bawah:</p>
                     <div style="text-align: center; margin: 35px 0;">
-                        <a href="${fileUrl}" style="background-color: #004d40; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Unduh Surat Balasan (PDF)</a>
+                        <a href="${fileUrl}" style="background-color: #004d40; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Unduh Balasan (PDF)</a>
                     </div>
-                    
-                    <p style="margin-top: 40px; font-size: 14px; border-top: 1px solid #eee; padding-top: 20px; color: #777;">
-                        Hormat kami,<br>
-                        <strong>Bagian Tata Usaha</strong><br>
-                        MTsN 1 Kota Pekanbaru
-                    </p>
-                </div>
-                <div style="background-color: #f9f9f9; padding: 15px; text-align: center; font-size: 11px; color: #999;">
-                    Ini adalah email otomatis. Mohon tidak membalas langsung ke alamat email ini.
                 </div>
             </div>
             `,
-            attachments: [
-                {
-                    filename: fileName,
-                    path: fileUrl 
-                }
-            ]
+            attachments: [{ filename: fileName, path: fileUrl }]
         };
         try {
             return await this.transporter.sendMail(mailOptions);
         } catch (error) {
-            console.error("Gagal mengirim email balasan resmi:", error);
+            console.error("Email Error:", error);
             throw error;
         }
     }
