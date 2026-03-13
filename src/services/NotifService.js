@@ -6,11 +6,7 @@ class NotifService {
         this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
     }
 
-    /**
-     * Mengirim notifikasi email internal menggunakan Brevo API
-     */
     async sendInternalNotif(to, subject, message) {
-        // Cek jika email kosong
         if (!to) throw new Error("Email tujuan tidak boleh kosong!");
 
         const payload = {
@@ -37,24 +33,18 @@ class NotifService {
             });
             return response.data;
         } catch (error) {
-            // Mengambil pesan error ASLI dari Brevo
             const detailError = error.response?.data?.message || error.message;
             console.error("❌ Gagal kirim email internal:", detailError);
             throw new Error(`Brevo Error: ${detailError}`);
         }
     }
 
-    /**
-     * Mengirim balasan resmi dengan desain profesional dan lampiran menggunakan Brevo API
-     */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
-        // Validasi ketat sebelum dikirim ke Brevo
         if (!to) throw new Error("Email tujuan pengirim surat tidak ditemukan di database!");
         if (!process.env.EMAIL_USER) throw new Error("EMAIL_USER di file .env belum diisi!");
 
         const payload = {
             sender: { name: "Tata Usaha MTsN 1 Pekanbaru", email: process.env.EMAIL_USER },
-            // Memberikan default string jika nama kosong agar Brevo tidak marah (error 400)
             to: [{ email: to, name: nama || "Pengirim Surat" }],
             subject: `Tanggapan Resmi Surat - ${nomor || 'Tanpa Nomor'}`,
             htmlContent: `
@@ -90,9 +80,19 @@ class NotifService {
             `
         };
 
-        // Pastikan url valid (Brevo butuh URL absolut berawalan http/https)
+
         if (fileUrl && fileUrl.startsWith('http')) {
-            payload.attachment = [{ url: fileUrl, name: fileName || 'Surat_Balasan.pdf' }];
+            try {
+                const fileResp = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+                const base64Content = Buffer.from(fileResp.data).toString('base64');
+                payload.attachment = [{ 
+                    content: base64Content, 
+                    name: fileName || 'Surat_Balasan.pdf' 
+                }];
+            } catch (err) {
+                console.error("Gagal mendownload PDF dari Cloudinary:", err.message);
+                payload.attachment = [{ url: fileUrl, name: fileName || 'Surat_Balasan.pdf' }];
+            }
         }
 
         try {
@@ -105,7 +105,6 @@ class NotifService {
             });
             return response.data;
         } catch (error) {
-            // Meneruskan error detail dari Brevo langsung ke Response Postman
             const detailError = error.response?.data?.message || error.message;
             console.error("❌ Gagal kirim email balasan:", error.response?.data || detailError);
             throw new Error(`Brevo Error: ${detailError}`);
