@@ -1,19 +1,21 @@
 const nodemailer = require('nodemailer');
 const dns = require('dns');
 
+// Memaksa sistem Node.js untuk selalu memprioritaskan IPv4
 dns.setDefaultResultOrder('ipv4first');
 
 class NotifService {
     constructor() {
         this.transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true, // Menggunakan SSL
+            port: 587, // Menggunakan port 587 (STARTTLS)
+            secure: false, // WAJIB false untuk port 587
+            requireTLS: true, // Memaksa agar koneksi di-upgrade ke enkripsi TLS
             auth: { 
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS 
             },
-            // Tetap pasang opsi ini untuk keamanan ekstra
+            family: 4, // Tetap memaksa penggunaan IPv4
             connectionTimeout: 20000,
             greetingTimeout: 20000,
             tls: {
