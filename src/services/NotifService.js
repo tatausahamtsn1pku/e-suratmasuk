@@ -6,9 +6,6 @@ class NotifService {
         this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
     }
 
-    /**
-     * Mengirim notifikasi email internal menggunakan Brevo API
-     */
     async sendInternalNotif(to, subject, message) {
         const payload = {
             sender: { name: "Sistem Disposisi MTsN 1", email: process.env.EMAIL_USER },
@@ -39,9 +36,6 @@ class NotifService {
         }
     }
 
-    /**
-     * Mengirim balasan resmi dengan desain profesional dan lampiran menggunakan Brevo API
-     */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         const payload = {
             sender: { name: "Tata Usaha MTsN 1 Pekanbaru", email: process.env.EMAIL_USER },
@@ -80,8 +74,6 @@ class NotifService {
             `
         };
 
-        // Brevo sangat canggih, kita cukup mengirimkan URL file Cloudinary, 
-        // Brevo yang akan otomatis mendownload dan menjadikannya lampiran di email tujuan!
         if (fileUrl && fileName) {
             payload.attachment = [{ url: fileUrl, name: fileName }];
         }
