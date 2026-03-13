@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,8 +9,9 @@ datasource db {
 
 enum Role {
   ADMIN
-  VALIDATOR
-  PENULIS
+  VALIDATOR_KHUSUS
+  VALIDATOR_UMUM
+  KATU
   APPROVER
   STAFF
 }
@@ -24,11 +23,7 @@ model User {
   role           Role
   jabatan        String?
   waNumber       String?
-  
-  // Relasi: Satu User (sebagai Staff/Penerus) bisa menangani banyak Surat
   surats         Surat[]  @relation("handler")
-  
-  // Relasi: Satu User (sebagai Approver) bisa menyetujui banyak Surat (Opsi B)
   approvedSurats Surat[]  @relation("approver")
 }
 
@@ -44,31 +39,24 @@ model Surat {
   tglSurat        String?
   isiDisposisi    String?
   status          String   @default("PENDING_VALIDATION") 
+  isNeedReplyFile Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt 
   officialEntry   DateTime 
 
-  // --- BAGIAN RELASI ---
-  
-  // Foreign Key untuk Staff (Penerus)
   penerusId       String?
   handler         User?    @relation("handler", fields: [penerusId], references: [id])
   
-  // Foreign Key untuk Approver (Opsi B)
   approverId      String?
   approver        User?    @relation("approver", fields: [approverId], references: [id])
   
-  jabatanPenerus  String?
-
-  // --- BAGIAN REVIEW & APPROVAL ---
-
+  // Kolom baru untuk birokrasi KATU & Staff
+  catatanKATU     String?
+  ttdKATU         String?
   catatanStaff    String?
   ttdStaff        String?
   catatanApprover String?
   ttdApprover     String?
-
-  // --- BAGIAN SURAT BALASAN (FINAL REPLY) ---
-
   fileReplyUrl    String?
   fileReplyName   String?
 }
