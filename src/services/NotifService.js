@@ -3,27 +3,26 @@ const nodemailer = require('nodemailer');
 class NotifService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            // Menggunakan host eksplisit smtp.gmail.com untuk kontrol lebih detail
             host: 'smtp.gmail.com',
-            port: 465, // Menggunakan port SSL/TLS
-            secure: true, 
+            port: 465,
+            secure: true, // Menggunakan SSL
             auth: { 
                 user: process.env.EMAIL_USER, 
                 pass: process.env.EMAIL_PASS 
             },
-            // Opsi penting untuk mengatasi ENETUNREACH di cloud
-            connectionTimeout: 10000, // Menambah batas waktu koneksi
-            greetingTimeout: 10000,
+            // OPSI KRITIKAL: Memaksa koneksi menggunakan IPv4 saja
+            family: 4, 
+            connectionTimeout: 15000,
+            greetingTimeout: 15000,
             tls: {
-                // Memaksa penggunaan IPv4 dengan menyediakan servername
                 servername: 'smtp.gmail.com',
-                rejectUnauthorized: false // Menghindari kegagalan jabat tangan SSL pada jaringan tertentu
+                rejectUnauthorized: false
             }
         });
     }
 
     /**
-     * Mengirim notifikasi email internal untuk alur sistem disposisi
+     * Mengirim notifikasi email internal
      */
     async sendInternalNotif(to, subject, message) {
         const mailOptions = {
@@ -42,13 +41,13 @@ class NotifService {
         try {
             return await this.transporter.sendMail(mailOptions);
         } catch (error) {
-            console.error("Email Error:", error);
+            console.error("Gagal kirim email internal:", error.message);
             throw error;
         }
     }
 
     /**
-     * Mengirim balasan resmi kepada pengirim surat dengan lampiran PDF
+     * Mengirim balasan resmi dengan lampiran PDF
      */
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         const mailOptions = {
@@ -63,11 +62,11 @@ class NotifService {
                 </div>
                 <div style="padding: 30px; line-height: 1.6; color: #333;">
                     <p>Yth. <strong>${nama}</strong>,</p>
-                    <p>Berikut adalah tanggapan resmi kami terkait surat nomor: <strong>${nomor}</strong>:</p>
+                    <p>Berdasarkan verifikasi surat nomor: <strong>${nomor}</strong>, berikut tanggapan kami:</p>
                     <div style="background: #f1f8f7; padding: 20px; border-left: 5px solid #004d40; margin: 25px 0; border-radius: 4px; color: #004d40;">
                         "${pesan}"
                     </div>
-                    <p>Dokumen balasan telah kami lampirkan. Anda juga dapat mengunduhnya melalui tombol di bawah:</p>
+                    <p>Dokumen balasan resmi telah dilampirkan atau dapat diunduh di bawah ini:</p>
                     <div style="text-align: center; margin: 35px 0;">
                         <a href="${fileUrl}" style="background-color: #004d40; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Unduh Balasan (PDF)</a>
                     </div>
@@ -79,7 +78,7 @@ class NotifService {
         try {
             return await this.transporter.sendMail(mailOptions);
         } catch (error) {
-            console.error("Email Error:", error);
+            console.error("Gagal kirim email balasan:", error.message);
             throw error;
         }
     }
