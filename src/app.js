@@ -32,7 +32,10 @@ app.patch('/api/surat/update/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => Sur
 app.delete('/api/surat/:id', auth(['ADMIN', 'VALIDATOR_KHUSUS']), (req, res) => SuratController.deleteSurat(req, res));
 
 // BUKU AGENDA SURAT
+app.get('/api/surat/agenda', auth(['ADMIN', 'VALIDATOR_KHUSUS', 'VALIDATOR_UMUM', 'KATU', 'APPROVER', 'STAFF']), (req, res) => SuratController.getAllAgenda(req, res));
 app.post('/api/surat/agenda/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => SuratController.createAgenda(req, res));
+app.put('/api/surat/agenda/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => SuratController.updateAgenda(req, res));
+app.delete('/api/surat/agenda/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => SuratController.deleteAgenda(req, res));
 app.patch('/api/surat/agenda/approve/:id', auth(['KATU']), (req, res) => SuratController.approveAgendaKATU(req, res));
 
 
