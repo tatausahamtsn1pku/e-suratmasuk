@@ -35,6 +35,7 @@ model Surat {
   waPengirim      String
   instansi        String
   fileUrl         String
+  
   nomorSurat      String?
   tglSurat        String?
   isiDisposisi    String?
@@ -44,19 +45,26 @@ model Surat {
   updatedAt       DateTime @updatedAt 
   officialEntry   DateTime 
 
+  nomorAgenda           String?
+  tglAgenda             DateTime?
+  isAgendaDisetujuiKATU Boolean   @default(false)
+
+  alasanPenolakan       String?
   penerusId       String?
   handler         User?    @relation("handler", fields: [penerusId], references: [id])
   
   approverId      String?
   approver        User?    @relation("approver", fields: [approverId], references: [id])
   
-  // Kolom baru untuk birokrasi KATU & Staff
   catatanKATU     String?
   ttdKATU         String?
+  
   catatanStaff    String?
   ttdStaff        String?
+  
   catatanApprover String?
   ttdApprover     String?
+  
   fileReplyUrl    String?
   fileReplyName   String?
 }

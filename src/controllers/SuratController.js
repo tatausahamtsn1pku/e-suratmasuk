@@ -16,7 +16,6 @@ class SuratController {
     try {
       const parts = url.split('/upload/');
       if (parts.length < 2) return null;
-      // Menyesuaikan jika ada fl_attachment atau format folder lain
       let publicIdWithExt = parts[1].split('/').slice(1).join('/'); 
       if (parts[1].includes('fl_attachment')) {
         publicIdWithExt = parts[1].split('/').slice(2).join('/');
@@ -25,13 +24,12 @@ class SuratController {
     } catch (e) { return null; }
   }
 
-  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY FIXED NAME & EXTENSION) ---
+  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY) ---
   async submit(req, res) {
     try {
       if (!req.file) return res.status(400).json({ error: "File PDF wajib ada!" });
       const trackingId = this.generateTrackingId();
 
-      // Ambil nama file asli (hilangkan ekstensi .pdf dan ganti spasi jadi underscore)
       const safeName = req.file.originalname.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
 
       const [scan, upload] = await Promise.all([
@@ -40,9 +38,9 @@ class SuratController {
           const stream = cloudinary.uploader.upload_stream(
             { 
               folder: 'disposisi/surat', 
-              resource_type: 'image', // Agar bisa di-view inline
-              format: 'pdf',          // WAJIB: Memaksa file memiliki ekstensi .pdf
-              public_id: `${safeName}_${trackingId}` // Nama file gabungan asli + tracking ID
+              resource_type: 'image', 
+              format: 'pdf',          
+              public_id: `${safeName}_${trackingId}` 
             },
             (err, result) => (err ? reject(err) : resolve(result))
           );
@@ -71,9 +69,37 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: "Gagal: " + e.message }); }
   }
 
-  // --- 2. ALUR BIROKRASI & UPDATE DATA ---
+  // --- 2. ALUR AGENDA SURAT (FITUR BARU) ---
+  async createAgenda(req, res) {
+    try {
+      const { id } = req.params;
+      const { nomorAgenda } = req.body;
 
-  // FITUR BARU: Update Surat Khusus Validator Khusus (Tanpa tglSurat)
+      if (!nomorAgenda) return res.status(400).json({ error: "Nomor Agenda wajib diisi!" });
+
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: {
+          nomorAgenda: this.cleanQuotes(nomorAgenda),
+          tglAgenda: new Date()
+        }
+      });
+      res.json({ success: true, message: "Agenda surat berhasil dicatat!", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  async approveAgendaKATU(req, res) {
+    try {
+      const { id } = req.params;
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: { isAgendaDisetujuiKATU: true }
+      });
+      res.json({ success: true, message: "Agenda surat telah diketahui dan disetujui oleh KATU!", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  // --- 3. ALUR BIROKRASI & UPDATE ---
   async updateSurat(req, res) {
     try {
       const { id } = req.params;
@@ -99,18 +125,9 @@ class SuratController {
   async forwardToKATU(req, res) {
     try {
       const { id } = req.params;
-      const { nomorSurat, namaPengirim, instansi, emailPengirim, waPengirim } = req.body;
-
       await prisma.surat.update({
         where: { id },
-        data: { 
-          status: 'AWAITING_KATU_REVIEW',
-          nomorSurat: nomorSurat ? this.cleanQuotes(nomorSurat) : undefined,
-          namaPengirim: namaPengirim ? this.cleanQuotes(namaPengirim) : undefined,
-          instansi: instansi ? this.cleanQuotes(instansi) : undefined,
-          emailPengirim: emailPengirim ? this.cleanQuotes(emailPengirim) : undefined,
-          waPengirim: waPengirim ? this.cleanQuotes(waPengirim) : undefined
-        }
+        data: { status: 'AWAITING_KATU_REVIEW' }
       });
       res.json({ success: true, message: "Surat diperbarui dan diteruskan ke KATU" });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -129,11 +146,7 @@ class SuratController {
 
       await prisma.surat.update({
         where: { id },
-        data: { 
-          status: 'AWAITING_KAMAD_APPROVAL', 
-          catatanKATU, 
-          ttdKATU: upload.secure_url 
-        }
+        data: { status: 'AWAITING_KAMAD_APPROVAL', catatanKATU, ttdKATU: upload.secure_url }
       });
       res.json({ success: true, message: "Diteruskan ke Kamad" });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -159,7 +172,55 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 3. STAFF & BALASAN ---
+  // --- 4. ALUR PENOLAKAN (KAMAD -> VALIDATOR) ---
+  async rejectByKamad(req, res) {
+    try {
+      const { id } = req.params;
+      const { alasan } = req.body;
+
+      if (!alasan) return res.status(400).json({ error: "Alasan penolakan dari Kamad wajib diisi!" });
+
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: {
+          status: 'REJECTED_BY_KAMAD', 
+          alasanPenolakan: alasan,
+          approverId: req.user.id
+        }
+      });
+      res.json({ success: true, message: "Instruksi penolakan surat berhasil dikirim ke Validator Khusus.", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  async executeRejectByValidator(req, res) {
+    try {
+      const { id } = req.params;
+
+      const surat = await prisma.surat.findUnique({ where: { id } });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan!" });
+      
+      if (surat.status !== 'REJECTED_BY_KAMAD') {
+         return res.status(400).json({ error: "Surat ini belum diinstruksikan untuk ditolak oleh Kepala Madrasah!" });
+      }
+
+      const alasanDariKamad = surat.alasanPenolakan || "Surat tidak memenuhi syarat administrasi madrasah.";
+      await NotifService.sendPrettyRejectEmail(
+        surat.emailPengirim, 
+        surat.namaPengirim, 
+        surat.nomorSurat, 
+        alasanDariKamad
+      );
+
+      const result = await prisma.surat.update({
+        where: { id },
+        data: { status: 'REJECTED' }
+      });
+
+      res.json({ success: true, message: "Penolakan berhasil dieksekusi. Email pemberitahuan telah terkirim!", data: result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  // --- 5. STAFF & BALASAN ---
   async staffReview(req, res) {
     try {
       const { id } = req.params;
@@ -189,18 +250,11 @@ class SuratController {
         await NotifService.sendInternalNotif(surat.emailPengirim, "Tanggapan Surat", pesan);
       } else {
         if (!req.file) return res.status(400).json({ error: "Wajib upload PDF balasan!" });
-        
-        // Ambil nama file balasan asli
         const safeName = req.file.originalname.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
 
         const upload = await new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
-            { 
-              folder: 'disposisi/balasan', 
-              resource_type: 'image',
-              format: 'pdf', // WAJIB
-              public_id: `Balasan_${safeName}_${id.substring(0,5)}` // Hasilnya misal: Balasan_Surat_Izin_abcde.pdf
-            }, 
+            { folder: 'disposisi/balasan', resource_type: 'image', format: 'pdf', public_id: `Balasan_${safeName}_${id.substring(0,5)}` }, 
             (err, res) => (err ? reject(err) : resolve(res))
           );
           stream.end(req.file.buffer);
@@ -214,7 +268,7 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 4. OPERASIONAL (TRACK, HISTORY, DETAIL, DELETE, REJECT) ---
+  // --- 6. OPERASIONAL & DASHBOARD ---
   async track(req, res) {
     const data = await prisma.surat.findUnique({ where: { trackingId: req.params.id }, select: { trackingId: true, status: true, nomorSurat: true, instansi: true, updatedAt: true } });
     if (!data) return res.status(404).json({ error: "Antrean tidak ditemukan" });
@@ -259,46 +313,10 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  async rejectSurat(req, res) {
-    try {
-      const { id } = req.params;
-      const { alasan } = req.body;
-
-      if (!alasan) return res.status(400).json({ error: "Alasan penolakan wajib diisi!" });
-
-      const surat = await prisma.surat.findUnique({ where: { id } });
-      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan!" });
-
-      // Memanggil fungsi email penolakan dengan desain cantik!
-      await NotifService.sendPrettyRejectEmail(
-        surat.emailPengirim, 
-        surat.namaPengirim, 
-        surat.nomorSurat, 
-        alasan
-      );
-
-      const result = await prisma.surat.update({
-        where: { id },
-        data: { status: 'REJECTED', catatanKATU: `[DITOLAK]: ${alasan}` }
-      });
-
-      res.json({ success: true, message: "Surat berhasil ditolak dan email pemberitahuan telah terkirim!", data: result });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  }
-
-  // --- 5. DASHBOARD (CHART & KALENDER) ---
   async getDashboardStats(req, res) {
     try {
-      const statusCounts = await prisma.surat.groupBy({
-        by: ['status'],
-        _count: { id: true }
-      });
-
-      const suratMasuk = await prisma.surat.findMany({
-        select: { id: true, status: true, createdAt: true },
-        orderBy: { createdAt: 'asc' }
-      });
-
+      const statusCounts = await prisma.surat.groupBy({ by: ['status'], _count: { id: true } });
+      const suratMasuk = await prisma.surat.findMany({ select: { id: true, status: true, createdAt: true }, orderBy: { createdAt: 'asc' } });
       res.json({ success: true, data: { persentaseStatus: statusCounts, timelineSurat: suratMasuk } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
@@ -308,11 +326,8 @@ class SuratController {
       const { date } = req.query; 
       if (!date) return res.status(400).json({ error: "Parameter tanggal (date) wajib dikirim! Format: YYYY-MM-DD" });
 
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      const startDate = new Date(date); startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date); endDate.setHours(23, 59, 59, 999);
 
       const suratsOnDate = await prisma.surat.findMany({
         where: { updatedAt: { gte: startDate, lte: endDate } },
@@ -324,15 +339,7 @@ class SuratController {
         return acc;
       }, {});
 
-      res.json({
-        success: true,
-        data: {
-          tanggal: date,
-          totalSuratDikerjakan: suratsOnDate.length,
-          akumulasiStatus: akumulasiStatus,
-          detailSurat: suratsOnDate
-        }
-      });
+      res.json({ success: true, data: { tanggal: date, totalSuratDikerjakan: suratsOnDate.length, akumulasiStatus, detailSurat: suratsOnDate } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 }
