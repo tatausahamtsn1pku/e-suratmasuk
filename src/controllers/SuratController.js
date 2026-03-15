@@ -27,7 +27,7 @@ class SuratController {
   }
 
   // ==========================================
-  // 1. SUBMIT SURAT (PUBLIC - OCR & CLOUDINARY)
+  // 1. SUBMIT SURAT (PUBLIC)
   // ==========================================
   async submit(req, res) {
     try {
@@ -74,8 +74,22 @@ class SuratController {
   }
 
   // ==========================================
-  // 2. BUKU AGENDA SURAT
+  // 2. CRUD BUKU AGENDA SURAT
   // ==========================================
+  async getAllAgenda(req, res) {
+    try {
+      const agendas = await prisma.surat.findMany({
+        where: { nomorAgenda: { not: null } },
+        orderBy: { tglAgenda: 'desc' },
+        select: {
+          id: true, trackingId: true, nomorSurat: true, nomorAgenda: true, 
+          tglAgenda: true, isAgendaDisetujuiKATU: true, instansi: true, namaPengirim: true
+        }
+      });
+      res.json({ success: true, data: agendas });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
   async createAgenda(req, res) {
     try {
       const { id } = req.params;
@@ -94,6 +108,51 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
+  async updateAgenda(req, res) {
+    try {
+      const { id } = req.params;
+      const { nomorAgenda } = req.body;
+
+      if (!nomorAgenda) return res.status(400).json({ error: "Nomor Agenda baru wajib diisi!" });
+
+      const surat = await prisma.surat.findUnique({ where: { id } });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan" });
+      
+      if (surat.isAgendaDisetujuiKATU) {
+        return res.status(403).json({ error: "Gagal! Agenda ini sudah disetujui oleh Kepala Tata Usaha dan tidak dapat diubah lagi." });
+      }
+
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: { nomorAgenda: this.cleanQuotes(nomorAgenda) }
+      });
+      res.json({ success: true, message: "Nomor Agenda berhasil diperbarui!", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  async deleteAgenda(req, res) {
+    try {
+      const { id } = req.params;
+
+      const surat = await prisma.surat.findUnique({ where: { id } });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan" });
+      
+      if (surat.isAgendaDisetujuiKATU) {
+        return res.status(403).json({ error: "Gagal! Agenda ini sudah disetujui oleh Kepala Tata Usaha dan tidak dapat dihapus." });
+      }
+
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: {
+          nomorAgenda: null,
+          tglAgenda: null,
+          isAgendaDisetujuiKATU: false
+        }
+      });
+      res.json({ success: true, message: "Catatan Agenda berhasil dihapus (dibatalkan)!", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
   async approveAgendaKATU(req, res) {
     try {
       const { id } = req.params;
@@ -106,7 +165,7 @@ class SuratController {
   }
 
   // ==========================================
-  // 3. UPDATE & ALUR BIROKRASI MAJU
+  // 3. UPDATE DATA & ALUR BIROKRASI MAJU
   // ==========================================
   async updateSurat(req, res) {
     try {
@@ -186,7 +245,7 @@ class SuratController {
   async rejectByKamad(req, res) {
     try {
       const { id } = req.params;
-      const { catatanInternal } = req.body; // Opsional dari Kamad
+      const { catatanInternal } = req.body; 
 
       const updated = await prisma.surat.update({
         where: { id },
@@ -203,7 +262,7 @@ class SuratController {
   async executeRejectByValidator(req, res) {
     try {
       const { id } = req.params;
-      const { alasan } = req.body; // WAJIB dari Validator untuk isi Email
+      const { alasan } = req.body; 
 
       if (!alasan) {
         return res.status(400).json({ error: "Alasan penolakan untuk dikirim ke email wajib diisi oleh Validator!" });
