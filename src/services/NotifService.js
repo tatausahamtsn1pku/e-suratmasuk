@@ -8,7 +8,6 @@ class NotifService {
 
     async sendInternalNotif(to, subject, message) {
         if (!to) throw new Error("Email tujuan tidak boleh kosong!");
-
         const payload = {
             sender: { name: "Sistem Disposisi MTsN 1", email: process.env.EMAIL_USER },
             to: [{ email: to }],
@@ -22,23 +21,62 @@ class NotifService {
             </div>
             `
         };
-
         try {
-            const response = await axios.post(this.apiUrl, payload, {
-                headers: {
-                    'accept': 'application/json',
-                    'api-key': this.apiKey,
-                    'content-type': 'application/json'
-                }
-            });
+            const response = await axios.post(this.apiUrl, payload, { headers: { 'accept': 'application/json', 'api-key': this.apiKey, 'content-type': 'application/json' } });
             return response.data;
         } catch (error) {
-            const detailError = error.response?.data?.message || error.message;
-            console.error("❌ Gagal kirim email internal:", detailError);
-            throw new Error(`Brevo Error: ${detailError}`);
+            throw new Error(`Brevo Error: ${error.response?.data?.message || error.message}`);
         }
     }
 
+    // --- FUNGSI BARU: EMAIL PENOLAKAN SURAT YANG CANTIK ---
+    async sendPrettyRejectEmail(to, nama, nomor, alasan) {
+        if (!to) throw new Error("Email tujuan pengirim surat tidak ditemukan!");
+        if (!process.env.EMAIL_USER) throw new Error("EMAIL_USER di file .env belum diisi!");
+
+        const payload = {
+            sender: { name: "Tata Usaha MTsN 1 Pekanbaru", email: process.env.EMAIL_USER },
+            to: [{ email: to, name: nama || "Pengirim Surat" }],
+            subject: `Pemberitahuan Penolakan Surat - ${nomor || 'Tanpa Nomor'}`,
+            htmlContent: `
+            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                <div style="background-color: #004d40; color: white; padding: 30px; text-align: center;">
+                    <h1 style="margin: 0; font-size: 22px; letter-spacing: 1px;">MTsN 1 KOTA PEKANBARU</h1>
+                    <p style="margin: 5px 0 0; opacity: 0.8; font-size: 14px;">Sistem Informasi Disposisi E-Surat</p>
+                </div>
+                <div style="padding: 30px; line-height: 1.6; color: #333; background-color: #ffffff;">
+                    <p>Yth. <strong>${nama || "Pengirim"}</strong>,</p>
+                    <p>Mohon maaf, berdasarkan hasil verifikasi terhadap pengajuan surat Anda dengan nomor: <strong>${nomor || '-'}</strong>, kami harus menolak pengajuan tersebut.</p>
+                    
+                    <p><strong>Alasan Penolakan:</strong></p>
+                    <div style="background: #ffebee; padding: 20px; border-left: 5px solid #d32f2f; margin: 15px 0; border-radius: 4px; color: #b71c1c;">
+                        ${alasan}
+                    </div>
+                    
+                    <p>Silakan perbaiki dokumen Anda sesuai dengan catatan di atas dan ajukan kembali melalui sistem kami. Terima kasih atas pengertian dan kerjasamanya.</p>
+                    
+                    <p style="margin-top: 40px; font-size: 14px; border-top: 1px solid #eee; padding-top: 20px; color: #777;">
+                        Hormat kami,<br>
+                        <strong>Bagian Tata Usaha</strong><br>
+                        MTsN 1 Kota Pekanbaru
+                    </p>
+                </div>
+                <div style="background-color: #f9f9f9; padding: 15px; text-align: center; font-size: 11px; color: #999;">
+                    Ini adalah email otomatis. Mohon tidak membalas langsung ke alamat email ini.
+                </div>
+            </div>
+            `
+        };
+
+        try {
+            const response = await axios.post(this.apiUrl, payload, { headers: { 'accept': 'application/json', 'api-key': this.apiKey, 'content-type': 'application/json' } });
+            return response.data;
+        } catch (error) {
+            throw new Error(`Brevo Error: ${error.response?.data?.message || error.message}`);
+        }
+    }
+
+    // --- FUNGSI LAMA: EMAIL BALASAN SURAT ---
     async sendPrettyReplyEmail(to, nama, nomor, pesan, fileUrl, fileName) {
         if (!to) throw new Error("Email tujuan pengirim surat tidak ditemukan di database!");
         if (!process.env.EMAIL_USER) throw new Error("EMAIL_USER di file .env belum diisi!");
@@ -80,34 +118,21 @@ class NotifService {
             `
         };
 
-
         if (fileUrl && fileUrl.startsWith('http')) {
             try {
                 const fileResp = await axios.get(fileUrl, { responseType: 'arraybuffer' });
                 const base64Content = Buffer.from(fileResp.data).toString('base64');
-                payload.attachment = [{ 
-                    content: base64Content, 
-                    name: fileName || 'Surat_Balasan.pdf' 
-                }];
+                payload.attachment = [{ content: base64Content, name: fileName || 'Surat_Balasan.pdf' }];
             } catch (err) {
-                console.error("Gagal mendownload PDF dari Cloudinary:", err.message);
                 payload.attachment = [{ url: fileUrl, name: fileName || 'Surat_Balasan.pdf' }];
             }
         }
 
         try {
-            const response = await axios.post(this.apiUrl, payload, {
-                headers: {
-                    'accept': 'application/json',
-                    'api-key': this.apiKey,
-                    'content-type': 'application/json'
-                }
-            });
+            const response = await axios.post(this.apiUrl, payload, { headers: { 'accept': 'application/json', 'api-key': this.apiKey, 'content-type': 'application/json' } });
             return response.data;
         } catch (error) {
-            const detailError = error.response?.data?.message || error.message;
-            console.error("❌ Gagal kirim email balasan:", error.response?.data || detailError);
-            throw new Error(`Brevo Error: ${detailError}`);
+            throw new Error(`Brevo Error: ${error.response?.data?.message || error.message}`);
         }
     }
 }

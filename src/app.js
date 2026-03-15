@@ -35,6 +35,9 @@ app.patch('/api/surat/disposisi-kamad/:id', auth(['APPROVER']), (req, res) => Su
 app.patch('/api/surat/staff-review/:id', auth(['STAFF']), upload.single('file'), (req, res) => SuratController.staffReview(req, res));
 app.post('/api/surat/reply/:id', auth(['VALIDATOR_KHUSUS', 'VALIDATOR_UMUM']), upload.single('file'), (req, res) => SuratController.sendFinalReply(req, res));
 
+// Update Surat
+app.patch('/api/surat/update/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => SuratController.updateSurat(req, res));
+
 // Reject Surat
 app.patch('/api/surat/reject/:id', auth(['VALIDATOR_KHUSUS']), (req, res) => SuratController.rejectSurat(req, res));
 

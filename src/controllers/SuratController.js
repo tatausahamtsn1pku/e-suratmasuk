@@ -29,7 +29,7 @@ class SuratController {
         pdf(req.file.buffer),
         new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
-            { folder: 'disposisi/surat', resource_type: 'raw' },
+            { folder: 'disposisi/surat', resource_type: 'image' }, // FIXED: image agar bisa di view inline
             (err, result) => (err ? reject(err) : resolve(result))
           );
           stream.end(req.file.buffer);
@@ -57,7 +57,33 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: "Gagal: " + e.message }); }
   }
 
-  // --- 2. ALUR BIROKRASI ---
+  // --- 2. ALUR BIROKRASI & UPDATE DATA ---
+
+ // FITUR BARU: Update Surat Khusus Validator Khusus (Tanpa tglSurat)
+  async updateSurat(req, res) {
+    try {
+      const { id } = req.params;
+      // tglSurat sudah dihapus dari req.body di bawah ini
+      const { nomorSurat, namaPengirim, instansi, emailPengirim, waPengirim } = req.body;
+
+      const surat = await prisma.surat.findUnique({ where: { id } });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan" });
+
+      const updated = await prisma.surat.update({
+        where: { id },
+        data: {
+          nomorSurat: nomorSurat ? this.cleanQuotes(nomorSurat) : undefined,
+          namaPengirim: namaPengirim ? this.cleanQuotes(namaPengirim) : undefined,
+          instansi: instansi ? this.cleanQuotes(instansi) : undefined,
+          emailPengirim: emailPengirim ? this.cleanQuotes(emailPengirim) : undefined,
+          waPengirim: waPengirim ? this.cleanQuotes(waPengirim) : undefined
+          // Update tglSurat juga dihilangkan dari payload prisma
+        }
+      });
+      res.json({ success: true, message: "Data surat berhasil diperbarui!", data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
   async forwardToKATU(req, res) {
     try {
       const { id } = req.params;
@@ -85,7 +111,7 @@ class SuratController {
       if (!req.file) return res.status(400).json({ error: "KATU wajib mengunggah TTD!" });
 
       const upload = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_katu', resource_type: 'raw' }, (err, result) => (err ? reject(err) : resolve(result)));
+        const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_katu', resource_type: 'image' }, (err, result) => (err ? reject(err) : resolve(result)));
         stream.end(req.file.buffer);
       });
 
@@ -128,7 +154,7 @@ class SuratController {
       let ttdUrl = null;
       if (req.file) {
         const upload = await new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_staff', resource_type: 'raw' }, (err, res) => (err ? reject(err) : resolve(res)));
+          const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/ttd_staff', resource_type: 'image' }, (err, res) => (err ? reject(err) : resolve(res)));
           stream.end(req.file.buffer);
         });
         ttdUrl = upload.secure_url;
@@ -152,7 +178,7 @@ class SuratController {
       } else {
         if (!req.file) return res.status(400).json({ error: "Wajib upload PDF balasan!" });
         const upload = await new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/balasan', resource_type: 'raw' }, (err, res) => (err ? reject(err) : resolve(res)));
+          const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/balasan', resource_type: 'image' }, (err, res) => (err ? reject(err) : resolve(res)));
           stream.end(req.file.buffer);
         });
         await NotifService.sendPrettyReplyEmail(surat.emailPengirim, surat.namaPengirim, surat.nomorSurat, pesan, upload.secure_url, req.file.originalname);
@@ -164,7 +190,7 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 4. OPERASIONAL (TRACK, HISTORY, DETAIL, DELETE) ---
+  // --- 4. OPERASIONAL (TRACK, HISTORY, DETAIL, DELETE, REJECT) ---
   async track(req, res) {
     const data = await prisma.surat.findUnique({ where: { trackingId: req.params.id }, select: { trackingId: true, status: true, nomorSurat: true, instansi: true, updatedAt: true } });
     if (!data) return res.status(404).json({ error: "Antrean tidak ditemukan" });
@@ -200,7 +226,7 @@ class SuratController {
       const deletePromises = [];
       [surat.fileUrl, surat.ttdKATU, surat.ttdStaff, surat.fileReplyUrl].forEach(url => {
         const pId = this.getPublicId(url);
-        if (pId) deletePromises.push(cloudinary.uploader.destroy(pId, { resource_type: 'raw' }));
+        if (pId) deletePromises.push(cloudinary.uploader.destroy(pId, { resource_type: 'image' }));
       });
 
       await Promise.allSettled(deletePromises);
@@ -209,7 +235,6 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 5. FITUR BARU: REJECT, CHART & KALENDER ---
   async rejectSurat(req, res) {
     try {
       const { id } = req.params;
@@ -220,15 +245,13 @@ class SuratController {
       const surat = await prisma.surat.findUnique({ where: { id } });
       if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan!" });
 
-      const subjek = `Pemberitahuan Penolakan Surat - Tracking ID: ${surat.trackingId}`;
-      const pesan = `Yth. ${surat.namaPengirim},<br><br>
-                     Mohon maaf, surat Anda dengan Nomor: <b>${surat.nomorSurat || 'Belum ada nomor'}</b> 
-                     terpaksa kami tolak pada tahap validasi.<br><br>
-                     <b>Alasan Penolakan:</b><br>
-                     <span style="color: red;">"${alasan}"</span><br><br>
-                     Silakan perbaiki dokumen Anda dan ajukan kembali. Terima kasih.`;
-      
-      await NotifService.sendInternalNotif(surat.emailPengirim, subjek, pesan);
+      // Memanggil fungsi email penolakan dengan desain cantik!
+      await NotifService.sendPrettyRejectEmail(
+        surat.emailPengirim, 
+        surat.namaPengirim, 
+        surat.nomorSurat, 
+        alasan
+      );
 
       const result = await prisma.surat.update({
         where: { id },
@@ -239,6 +262,7 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
+  // --- 5. DASHBOARD (CHART & KALENDER) ---
   async getDashboardStats(req, res) {
     try {
       const statusCounts = await prisma.surat.groupBy({
