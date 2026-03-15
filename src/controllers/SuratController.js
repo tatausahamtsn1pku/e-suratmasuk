@@ -6,7 +6,7 @@ const NotifService = require('../services/NotifService');
 const crypto = require('crypto');
 
 class SuratController {
-  // --- FUNGSI HELPER (UTUH) ---
+  // --- FUNGSI HELPER ---
   generateTrackingId() { return crypto.randomBytes(5).toString('hex').toUpperCase(); }
   cleanQuotes(val) { return val ? val.toString().replace(/['"]+/g, '').trim() : ""; }
   getPublicId(url) {
@@ -57,9 +57,7 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: "Gagal: " + e.message }); }
   }
 
-  // --- 2. ALUR BIROKRASI (DENGAN UPDATE DATA) ---
-  
-  // Endpoint ini sekarang bisa menerima Body JSON untuk update data
+  // --- 2. ALUR BIROKRASI ---
   async forwardToKATU(req, res) {
     try {
       const { id } = req.params;
@@ -69,7 +67,6 @@ class SuratController {
         where: { id },
         data: { 
           status: 'AWAITING_KATU_REVIEW',
-          // Jika data ada di body, maka diupdate. Jika tidak, tetap pakai data lama.
           nomorSurat: nomorSurat ? this.cleanQuotes(nomorSurat) : undefined,
           namaPengirim: namaPengirim ? this.cleanQuotes(namaPengirim) : undefined,
           instansi: instansi ? this.cleanQuotes(instansi) : undefined,
@@ -167,7 +164,7 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 4. OPERASIONAL (TRACK, HISTORY, DELETE) ---
+  // --- 4. OPERASIONAL (TRACK, HISTORY, DETAIL, DELETE) ---
   async track(req, res) {
     const data = await prisma.surat.findUnique({ where: { trackingId: req.params.id }, select: { trackingId: true, status: true, nomorSurat: true, instansi: true, updatedAt: true } });
     if (!data) return res.status(404).json({ error: "Antrean tidak ditemukan" });
@@ -180,6 +177,18 @@ class SuratController {
     if (role === 'STAFF') whereClause = { penerusId: id };
     const history = await prisma.surat.findMany({ where: whereClause, orderBy: { updatedAt: 'desc' } });
     res.json({ success: true, data: history });
+  }
+
+  async getDetail(req, res) {
+    try {
+      const { id } = req.params;
+      const surat = await prisma.surat.findUnique({ 
+        where: { id },
+        include: { handler: { select: { username: true, jabatan: true } }, approver: { select: { username: true, jabatan: true } } }
+      });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan" });
+      res.json({ success: true, data: surat });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
   async deleteSurat(req, res) {
@@ -197,6 +206,85 @@ class SuratController {
       await Promise.allSettled(deletePromises);
       await prisma.surat.delete({ where: { id } });
       res.json({ success: true, message: "Hapus berhasil" });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  // --- 5. FITUR BARU: REJECT, CHART & KALENDER ---
+  async rejectSurat(req, res) {
+    try {
+      const { id } = req.params;
+      const { alasan } = req.body;
+
+      if (!alasan) return res.status(400).json({ error: "Alasan penolakan wajib diisi!" });
+
+      const surat = await prisma.surat.findUnique({ where: { id } });
+      if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan!" });
+
+      const subjek = `Pemberitahuan Penolakan Surat - Tracking ID: ${surat.trackingId}`;
+      const pesan = `Yth. ${surat.namaPengirim},<br><br>
+                     Mohon maaf, surat Anda dengan Nomor: <b>${surat.nomorSurat || 'Belum ada nomor'}</b> 
+                     terpaksa kami tolak pada tahap validasi.<br><br>
+                     <b>Alasan Penolakan:</b><br>
+                     <span style="color: red;">"${alasan}"</span><br><br>
+                     Silakan perbaiki dokumen Anda dan ajukan kembali. Terima kasih.`;
+      
+      await NotifService.sendInternalNotif(surat.emailPengirim, subjek, pesan);
+
+      const result = await prisma.surat.update({
+        where: { id },
+        data: { status: 'REJECTED', catatanKATU: `[DITOLAK]: ${alasan}` }
+      });
+
+      res.json({ success: true, message: "Surat berhasil ditolak dan email pemberitahuan telah terkirim!", data: result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  async getDashboardStats(req, res) {
+    try {
+      const statusCounts = await prisma.surat.groupBy({
+        by: ['status'],
+        _count: { id: true }
+      });
+
+      const suratMasuk = await prisma.surat.findMany({
+        select: { id: true, status: true, createdAt: true },
+        orderBy: { createdAt: 'asc' }
+      });
+
+      res.json({ success: true, data: { persentaseStatus: statusCounts, timelineSurat: suratMasuk } });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+
+  async getCalendarSummary(req, res) {
+    try {
+      const { date } = req.query; 
+      if (!date) return res.status(400).json({ error: "Parameter tanggal (date) wajib dikirim! Format: YYYY-MM-DD" });
+
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+
+      const suratsOnDate = await prisma.surat.findMany({
+        where: { updatedAt: { gte: startDate, lte: endDate } },
+        select: { id: true, trackingId: true, nomorSurat: true, instansi: true, status: true, updatedAt: true }
+      });
+
+      const akumulasiStatus = suratsOnDate.reduce((acc, curr) => {
+        acc[curr.status] = (acc[curr.status] || 0) + 1;
+        return acc;
+      }, {});
+
+      res.json({
+        success: true,
+        data: {
+          tanggal: date,
+          totalSuratDikerjakan: suratsOnDate.length,
+          akumulasiStatus: akumulasiStatus,
+          detailSurat: suratsOnDate
+        }
+      });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 }
