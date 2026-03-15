@@ -8,28 +8,42 @@ const crypto = require('crypto');
 class SuratController {
   // --- FUNGSI HELPER ---
   generateTrackingId() { return crypto.randomBytes(5).toString('hex').toUpperCase(); }
+  
   cleanQuotes(val) { return val ? val.toString().replace(/['"]+/g, '').trim() : ""; }
+  
   getPublicId(url) {
     if (!url) return null;
     try {
       const parts = url.split('/upload/');
       if (parts.length < 2) return null;
-      const publicIdWithExt = parts[1].split('/').slice(1).join('/'); 
+      // Menyesuaikan jika ada fl_attachment atau format folder lain
+      let publicIdWithExt = parts[1].split('/').slice(1).join('/'); 
+      if (parts[1].includes('fl_attachment')) {
+        publicIdWithExt = parts[1].split('/').slice(2).join('/');
+      }
       return publicIdWithExt.split('.')[0];
     } catch (e) { return null; }
   }
 
-  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY) ---
+  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY FIXED NAME & EXTENSION) ---
   async submit(req, res) {
     try {
       if (!req.file) return res.status(400).json({ error: "File PDF wajib ada!" });
       const trackingId = this.generateTrackingId();
 
+      // Ambil nama file asli (hilangkan ekstensi .pdf dan ganti spasi jadi underscore)
+      const safeName = req.file.originalname.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
+
       const [scan, upload] = await Promise.all([
         pdf(req.file.buffer),
         new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
-            { folder: 'disposisi/surat', resource_type: 'image' }, // FIXED: image agar bisa di view inline
+            { 
+              folder: 'disposisi/surat', 
+              resource_type: 'image', // Agar bisa di-view inline
+              format: 'pdf',          // WAJIB: Memaksa file memiliki ekstensi .pdf
+              public_id: `${safeName}_${trackingId}` // Nama file gabungan asli + tracking ID
+            },
             (err, result) => (err ? reject(err) : resolve(result))
           );
           stream.end(req.file.buffer);
@@ -59,11 +73,10 @@ class SuratController {
 
   // --- 2. ALUR BIROKRASI & UPDATE DATA ---
 
- // FITUR BARU: Update Surat Khusus Validator Khusus (Tanpa tglSurat)
+  // FITUR BARU: Update Surat Khusus Validator Khusus (Tanpa tglSurat)
   async updateSurat(req, res) {
     try {
       const { id } = req.params;
-      // tglSurat sudah dihapus dari req.body di bawah ini
       const { nomorSurat, namaPengirim, instansi, emailPengirim, waPengirim } = req.body;
 
       const surat = await prisma.surat.findUnique({ where: { id } });
@@ -77,7 +90,6 @@ class SuratController {
           instansi: instansi ? this.cleanQuotes(instansi) : undefined,
           emailPengirim: emailPengirim ? this.cleanQuotes(emailPengirim) : undefined,
           waPengirim: waPengirim ? this.cleanQuotes(waPengirim) : undefined
-          // Update tglSurat juga dihilangkan dari payload prisma
         }
       });
       res.json({ success: true, message: "Data surat berhasil diperbarui!", data: updated });
@@ -177,8 +189,20 @@ class SuratController {
         await NotifService.sendInternalNotif(surat.emailPengirim, "Tanggapan Surat", pesan);
       } else {
         if (!req.file) return res.status(400).json({ error: "Wajib upload PDF balasan!" });
+        
+        // Ambil nama file balasan asli
+        const safeName = req.file.originalname.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, '_');
+
         const upload = await new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream({ folder: 'disposisi/balasan', resource_type: 'image' }, (err, res) => (err ? reject(err) : resolve(res)));
+          const stream = cloudinary.uploader.upload_stream(
+            { 
+              folder: 'disposisi/balasan', 
+              resource_type: 'image',
+              format: 'pdf', // WAJIB
+              public_id: `Balasan_${safeName}_${id.substring(0,5)}` // Hasilnya misal: Balasan_Surat_Izin_abcde.pdf
+            }, 
+            (err, res) => (err ? reject(err) : resolve(res))
+          );
           stream.end(req.file.buffer);
         });
         await NotifService.sendPrettyReplyEmail(surat.emailPengirim, surat.namaPengirim, surat.nomorSurat, pesan, upload.secure_url, req.file.originalname);
