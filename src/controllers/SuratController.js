@@ -6,7 +6,9 @@ const NotifService = require('../services/NotifService');
 const crypto = require('crypto');
 
 class SuratController {
-  // --- FUNGSI HELPER ---
+  // ==========================================
+  // FUNGSI HELPER
+  // ==========================================
   generateTrackingId() { return crypto.randomBytes(5).toString('hex').toUpperCase(); }
   
   cleanQuotes(val) { return val ? val.toString().replace(/['"]+/g, '').trim() : ""; }
@@ -24,7 +26,9 @@ class SuratController {
     } catch (e) { return null; }
   }
 
-  // --- 1. SUBMIT SURAT (OCR & CLOUDINARY) ---
+  // ==========================================
+  // 1. SUBMIT SURAT (PUBLIC - OCR & CLOUDINARY)
+  // ==========================================
   async submit(req, res) {
     try {
       if (!req.file) return res.status(400).json({ error: "File PDF wajib ada!" });
@@ -69,7 +73,9 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: "Gagal: " + e.message }); }
   }
 
-  // --- 2. ALUR AGENDA SURAT (FITUR BARU) ---
+  // ==========================================
+  // 2. BUKU AGENDA SURAT
+  // ==========================================
   async createAgenda(req, res) {
     try {
       const { id } = req.params;
@@ -99,7 +105,9 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 3. ALUR BIROKRASI & UPDATE ---
+  // ==========================================
+  // 3. UPDATE & ALUR BIROKRASI MAJU
+  // ==========================================
   async updateSurat(req, res) {
     try {
       const { id } = req.params;
@@ -172,19 +180,19 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 4. ALUR PENOLAKAN (KAMAD -> VALIDATOR) ---
+  // ==========================================
+  // 4. ALUR PENOLAKAN (KAMAD -> VALIDATOR)
+  // ==========================================
   async rejectByKamad(req, res) {
     try {
       const { id } = req.params;
-      const { alasan } = req.body;
-
-      if (!alasan) return res.status(400).json({ error: "Alasan penolakan dari Kamad wajib diisi!" });
+      const { catatanInternal } = req.body; // Opsional dari Kamad
 
       const updated = await prisma.surat.update({
         where: { id },
         data: {
           status: 'REJECTED_BY_KAMAD', 
-          alasanPenolakan: alasan,
+          catatanApprover: catatanInternal || "Surat diinstruksikan untuk ditolak oleh Kepala Madrasah.", 
           approverId: req.user.id
         }
       });
@@ -195,6 +203,11 @@ class SuratController {
   async executeRejectByValidator(req, res) {
     try {
       const { id } = req.params;
+      const { alasan } = req.body; // WAJIB dari Validator untuk isi Email
+
+      if (!alasan) {
+        return res.status(400).json({ error: "Alasan penolakan untuk dikirim ke email wajib diisi oleh Validator!" });
+      }
 
       const surat = await prisma.surat.findUnique({ where: { id } });
       if (!surat) return res.status(404).json({ error: "Surat tidak ditemukan!" });
@@ -203,24 +216,28 @@ class SuratController {
          return res.status(400).json({ error: "Surat ini belum diinstruksikan untuk ditolak oleh Kepala Madrasah!" });
       }
 
-      const alasanDariKamad = surat.alasanPenolakan || "Surat tidak memenuhi syarat administrasi madrasah.";
       await NotifService.sendPrettyRejectEmail(
         surat.emailPengirim, 
         surat.namaPengirim, 
         surat.nomorSurat, 
-        alasanDariKamad
+        alasan
       );
 
       const result = await prisma.surat.update({
         where: { id },
-        data: { status: 'REJECTED' }
+        data: { 
+          status: 'REJECTED',
+          alasanPenolakan: alasan 
+        }
       });
 
       res.json({ success: true, message: "Penolakan berhasil dieksekusi. Email pemberitahuan telah terkirim!", data: result });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 5. STAFF & BALASAN ---
+  // ==========================================
+  // 5. STAFF & PENYELESAIAN (BALASAN EMAIL)
+  // ==========================================
   async staffReview(req, res) {
     try {
       const { id } = req.params;
@@ -268,7 +285,9 @@ class SuratController {
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 
-  // --- 6. OPERASIONAL & DASHBOARD ---
+  // ==========================================
+  // 6. OPERASIONAL & DASHBOARD
+  // ==========================================
   async track(req, res) {
     const data = await prisma.surat.findUnique({ where: { trackingId: req.params.id }, select: { trackingId: true, status: true, nomorSurat: true, instansi: true, updatedAt: true } });
     if (!data) return res.status(404).json({ error: "Antrean tidak ditemukan" });
